@@ -1,7 +1,7 @@
 "use client";
 
-import { useState,useEffect } from "react";
-import { dummyOrders } from "@/data/dummyOrders";
+import { useState, useEffect } from "react";
+
 
 export default function AdminPage() {
     const [products, setProducts] = useState([]);
@@ -24,6 +24,27 @@ export default function AdminPage() {
         loadProducts();
         loadOrders();   // ADD THIS
     }, []);
+    const uploadToCloudinary = async (file) => {
+        if (!file) return "";
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", "unsigned_preset");   // your preset name
+
+        const cloudName = "dx5hudjqi"; // change this
+
+        const res = await fetch(
+            `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+            {
+                method: "POST",
+                body: formData,
+            }
+        );
+
+        const data = await res.json();
+        return data.secure_url; // <-- Cloudinary image URL
+    };
+
 
 
     const [form, setForm] = useState({
@@ -42,24 +63,36 @@ export default function AdminPage() {
 
     const createProduct = async () => {
         if (!form.name || !form.price || !form.category) {
-            alert("All fields required");
+            alert("All fields are required");
             return;
+        }
+
+        let imageUrl = "";
+
+        if (form.imageFile) {
+            imageUrl = await uploadToCloudinary(form.imageFile);
         }
 
         const res = await fetch("/api/products", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(form),
+            body: JSON.stringify({
+                name: form.name,
+                price: form.price,
+                category: form.category,
+                imageUrl: imageUrl,
+            }),
         });
 
         if (res.ok) {
             alert("Product added!");
-            setForm({ name: "", price: "", category: "", imageUrl: "" });
+            setForm({ name: "", price: "", category: "", imageUrl: "", imageFile: null });
             loadProducts();
         } else {
-            alert("Product save failed");
+            alert("Error saving product");
         }
     };
+
 
 
     return (
@@ -92,7 +125,7 @@ export default function AdminPage() {
                 {/* ADD PRODUCT SECTION */}
                 <section className="bg-[#1a1a1a] p-6 rounded-xl shadow border border-[#333]">
                     <h2 className="text-xl font-semibold text-[#d4af37] mb-4">
-                        Add Product (Dummy)
+                        Add Product
                     </h2>
 
                     <div className="space-y-3 text-sm">
@@ -117,13 +150,28 @@ export default function AdminPage() {
                             className="w-full px-3 py-2 rounded-lg bg-[#222] border border-[#444] text-white"
                             onChange={handleChange}
                         />
-
+                        <label className="text-sm text-gray-300">Product Image</label>
                         <input
+                            type="file"
+                            accept="image/*"
+                            className="w-full px-3 py-2 rounded-lg bg-[#222] border border-[#444]"
+                            onChange={(e) => setForm({ ...form, imageFile: e.target.files[0] })}
+                        />
+
+                        {form.imageFile && (
+                            <img
+                                src={URL.createObjectURL(form.imageFile)}
+                                className="h-24 mt-2 rounded object-cover"
+                            />
+                        )}
+
+
+                        {/* <input
                             name="imageUrl"
                             placeholder="Image URL (optional)"
                             className="w-full px-3 py-2 rounded-lg bg-[#222] border border-[#444] text-white"
                             onChange={handleChange}
-                        />
+                        /> */}
 
                         <button
                             onClick={createProduct}
@@ -157,7 +205,7 @@ export default function AdminPage() {
                 {/* ORDERS SECTION */}
                 <section className="bg-[#1a1a1a] p-6 rounded-xl shadow border border-[#333]">
                     <h2 className="text-xl font-semibold text-[#d4af37] mb-4">
-                        Orders (Dummy)
+                        Orders
                     </h2>
 
                     <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 text-sm">
@@ -187,7 +235,7 @@ export default function AdminPage() {
                             </div>
                         ))}
 
-                        {dummyOrders.length === 0 && (
+                        {orders.length === 0 && (
                             <p className="text-gray-500">No orders found</p>
                         )}
                     </div>

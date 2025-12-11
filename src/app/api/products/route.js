@@ -9,16 +9,39 @@ export async function GET() {
 }
 
 // CREATE PRODUCT
+// CREATE PRODUCT + Auto add category
 export async function POST(req) {
   const body = await req.json();
 
-  const docRef = await db.collection("products").add({
-    name: body.name,
-    price: Number(body.price),
-    category: body.category,
-    imageUrl: body.imageUrl || "",
+  const { name, price, category, imageUrl } = body;
+
+  if (!name || !price || !category) {
+    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  }
+
+  // 1. Save product
+  const productRef = await db.collection("products").add({
+    name,
+    price: Number(price),
+    category,
+    imageUrl: imageUrl || "",
     createdAt: Date.now()
   });
 
-  return NextResponse.json({ id: docRef.id });
+  // 2. Check if category exists
+  const categorySnapshot = await db
+    .collection("categories")
+    .where("name", "==", category)
+    .get();
+
+  // 3. If not found → create category
+  if (categorySnapshot.empty) {
+    await db.collection("categories").add({
+      name: category,
+      createdAt: Date.now()
+    });
+  }
+
+  return NextResponse.json({ id: productRef.id });
 }
+

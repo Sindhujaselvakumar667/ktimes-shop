@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { dummyProducts } from "@/data/dummyProducts";
-import { categories } from "@/data/dummyCategories";
+import { useState, useEffect } from "react";
 import { categoryIcons } from "@/data/categoryIcons";
 
 export default function HomePage() {
@@ -12,12 +10,32 @@ export default function HomePage() {
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
 
-  const filteredProducts = dummyProducts
-    .filter((p) => p.category === selectedCategory)
-    .filter((p) =>
-      p.name.toLowerCase().includes(search.toLowerCase())
-    );
+  useEffect(() => {
+    loadProducts();
+    loadCategories();
+  }, []);
+
+  const loadProducts = async () => {
+    const res = await fetch("/api/products");
+    const data = await res.json();
+    setProducts(data);
+  };
+
+  const loadCategories = async () => {
+    const res = await fetch("/api/categories");
+    const data = await res.json();
+    setCategories(data);
+  };
+
+
+
+  const filteredProducts = products
+    .filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase());
+
+
 
   const addToCart = (product) => {
     setCart((old) => {
@@ -78,7 +96,7 @@ export default function HomePage() {
         <img
           src="/logo.png"
           alt="KTIMES Logo"
-          className="h-16 object-contain"
+          className="h-32 object-contain"
         />
       </header>
 
@@ -87,7 +105,7 @@ export default function HomePage() {
         {categories.map((cat) => (
           <button
             key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
+            onClick={() => setSelectedCategory(cat.name.toLowerCase())}
             className={`px-4 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition ${selectedCategory === cat.id
               ? "bg-[#d4af37] text-black font-semibold" // gold theme
               : "bg-[#222]"
