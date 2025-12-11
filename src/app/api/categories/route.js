@@ -1,9 +1,8 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
+import { NextResponse } from "next/server";
 
-// GET categories
 export async function GET() {
-  const snapshot = await db.collection("categories").get();
+  const snapshot = await db.collection("categories").orderBy("name").get();
   const categories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   return NextResponse.json(categories);
 }

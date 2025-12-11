@@ -29,3 +29,38 @@ export async function GET() {
   const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   return NextResponse.json(orders);
 }
+
+// Update order status
+export async function PUT(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const { status } = await req.json();
+
+    if (!id || !status) {
+      return NextResponse.json({ error: "Missing order ID or status" }, { status: 400 });
+    }
+
+    await db.collection("orders").doc(id).update({ status });
+    return NextResponse.json({ message: "Order status updated" });
+  } catch (error) {
+    console.error("Error updating order status:", error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  }
+}
+
+// Delete order
+export async function DELETE(req) {
+    try {
+        const { searchParams } = new URL(req.url);
+        const id = searchParams.get("id");
+        if (!id) {
+            return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
+        }
+        await db.collection("orders").doc(id).delete();
+        return NextResponse.json({ message: "Order deleted successfully" });
+    } catch (error) {
+        console.error("Error deleting order:", error);
+        return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+    }
+}

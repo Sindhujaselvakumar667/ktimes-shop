@@ -1,7 +1,85 @@
 "use client";
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { categoryIcons } from "@/data/categoryIcons";
+
+const ProductSkeleton = () => (
+    <div className="bg-[#1c1c1c] rounded-xl p-3 shadow-lg border border-[#333] animate-pulse">
+        <div className="w-full h-28 bg-[#333] rounded"></div>
+        <div className="h-4 bg-[#333] rounded mt-2 w-3/4"></div>
+        <div className="h-3 bg-[#333] rounded mt-1 w-1/2"></div>
+        <div className="h-5 bg-[#333] rounded mt-1 w-1/4"></div>
+        <div className="h-8 bg-[#333] rounded mt-2 w-full"></div>
+    </div>
+);
+
+const QuantityStepper = ({ itemId, onUpdate, currentQty }) => {
+    const handleIncrement = () => {
+        onUpdate(itemId, currentQty + 1);
+    };
+
+    const handleDecrement = () => {
+        onUpdate(itemId, currentQty - 1);
+    };
+
+    const handleChange = (e) => {
+        onUpdate(itemId, Math.max(0, parseInt(e.target.value) || 0));
+    };
+
+    if (currentQty === 0) {
+        return (
+            <button
+                className="w-full border border-[#d4af37] text-[#d4af37] px-3 py-1 rounded hover:bg-[#d4af37] hover:text-black transition"
+                onClick={handleIncrement}
+            >
+                Add to Cart
+            </button>
+        );
+    }
+
+    return (
+        <div className="flex items-center justify-center gap-2">
+            <button onClick={handleDecrement} className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded-full">-</button>
+            <input
+                type="number"
+                min="0"
+                value={currentQty}
+                onChange={handleChange}
+                className="w-12 text-center bg-transparent border-x-0 border-y-2 border-y-[#444] text-white"
+            />
+            <button onClick={handleIncrement} className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded-full">+</button>
+        </div>
+    );
+};
+
+const ProductCard = ({ product, updateCartQty, itemInCart }) => {
+    const currentQty = itemInCart ? itemInCart.qty : 0;
+
+    return (
+        <div className="bg-[#1c1c1c] rounded-xl p-3 shadow-lg border border-[#333] flex flex-col justify-between">
+            <div>
+                <img
+                    src={product.imageUrl || `https://placehold.co/400x400/1c1c1c/d4af37?text=${encodeURIComponent(product.name)}`}
+                    alt={product.name}
+                    className="w-full h-28 object-cover rounded bg-[#333]"
+                />
+                <h3 className="font-semibold mt-2">{product.name}</h3>
+                <p className="text-sm text-gray-400 capitalize">
+                    {product.category}
+                </p>
+                <p className="font-bold mt-1 text-[#d4af37]">
+                    ₹{product.price}
+                </p>
+            </div>
+            <div className="mt-2">
+                <QuantityStepper
+                    itemId={product.id}
+                    onUpdate={updateCartQty}
+                    currentQty={currentQty}
+                />
+            </div>
+        </div>
+    );
+};
 
 export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("clock");
@@ -12,10 +90,18 @@ export default function HomePage() {
   const [note, setNote] = useState("");
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [modalState, setModalState] = useState({ isOpen: false, message: "" });
+  const cartRef = useRef(null);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
   useEffect(() => {
-    loadProducts();
-    loadCategories();
+    const loadData = async () => {
+        setIsPageLoading(true);
+        await Promise.all([loadProducts(), loadCategories()]);
+        setIsPageLoading(false);
+    };
+    loadData();
   }, []);
 
   const loadProducts = async () => {
@@ -30,74 +116,118 @@ export default function HomePage() {
     setCategories(data);
   };
 
-
-
   const filteredProducts = products
-    .filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase());
+    .filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase())
+    .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 
-
-
-  const addToCart = (product) => {
-    setCart((old) => {
-      const exists = old.find((i) => i.id === product.id);
-      if (exists) {
-        return old.map((i) =>
-          i.id === product.id ? { ...i, qty: i.qty + 1 } : i
-        );
-      }
-      return [...old, { ...product, qty: 1 }];
+  const updateQty = (id, qty) => {
+    if (qty < 0) return;
+    setCart((items) => {
+        if (qty === 0) {
+            return items.filter(i => i.id !== id);
+        }
+        const exists = items.find((i) => i.id === id);
+        if (exists) {
+            return items.map((i) => (i.id === id ? { ...i, qty } : i));
+        } else {
+            const product = products.find(p => p.id === id);
+            if (product) {
+                return [...items, { ...product, qty }];
+            }
+        }
+        return items;
     });
   };
 
-  const updateQty = (id, qty) => {
-    if (qty <= 0) {
-      setCart((items) => items.filter((i) => i.id !== id));
-    } else {
-      setCart((items) =>
-        items.map((i) => (i.id === id ? { ...i, qty } : i))
-      );
-    }
-  };
   const placeOrder = async () => {
-    if (!customerName || !phone) {
-      alert("Please enter your name and phone");
+    if (!customerName) {
+      setModalState({ isOpen: true, message: "Please enter your name" });
       return;
     }
 
-    const res = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customerName,
-        phone,
-        note,
-        items: cart
-      })
-    });
+    setIsPlacingOrder(true);
+    try {
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName,
+            phone,
+            note,
+            items: cart
+          })
+        });
 
-    if (res.ok) {
-      alert("Order placed successfully!");
-      setCart([]);
-      setCustomerName("");
-      setPhone("");
-      setNote("");
-    } else {
-      alert("Order failed!");
+        if (res.ok) {
+          setModalState({ isOpen: true, message: "Order placed successfully!" });
+          setCart([]);
+          setCustomerName("");
+          setPhone("");
+          setNote("");
+        } else {
+          setModalState({ isOpen: true, message: "Order failed!" });
+        }
+    } catch (error) {
+        setModalState({ isOpen: true, message: "An unexpected error occurred." });
+    } finally {
+        setIsPlacingOrder(false);
     }
   };
 
   const total = cart.reduce((sum, i) => sum + i.qty * i.price, 0);
 
+  const Modal = ({ state, setState }) => {
+    const { isOpen, message } = state;
+    if (!isOpen) return null;
+
+    const handleClose = () => {
+        setState({ isOpen: false, message: "" });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
+            <div className="bg-[#1a1a1a] p-6 rounded-xl shadow-lg border border-[#333] w-full max-w-sm text-white">
+                <p className="mb-4">{message}</p>
+                <div className="flex justify-end">
+                    <button onClick={handleClose} className="bg-[#d4af37] text-black px-4 py-2 rounded">OK</button>
+                </div>
+            </div>
+        </div>
+    );
+  };
+
+  const handleCartClick = () => {
+    cartRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
     <div className="min-h-screen bg-[#111] text-white">
+      <Modal state={modalState} setState={setModalState} />
 
       {/* HEADER */}
-      <header className="bg-[#111] p-4 flex justify-center border-b border-[#444]">
-        <img
-          src="/logo.png"
-          alt="KTIMES Logo"
-          className="h-32 object-contain"
-        />
+      <header className="bg-[#111] p-4 flex justify-between items-center border-b border-[#444] sticky top-0 z-20">
+        <div className="w-1/3">
+          {/* Empty div for spacing */}
+        </div>
+        <div className="w-1/3 flex justify-center">
+            <img
+              src="/logo.png"
+              alt="KTIMES Logo"
+              className="h-20 object-contain"
+            />
+        </div>
+        <div className="w-1/3 flex justify-end">
+          <div className="relative cursor-pointer" onClick={handleCartClick}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-6 h-6 text-white">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l1.823-6.44a1.125 1.125 0 00-.142-1.087l-3.232-4.21a.75.75 0 00-.91-.257l-4.244 1.766M7.5 14.25L5.106 5.165m0 0a3.375 3.375 0 01-3.375-3.375h.008c1.865 0 3.375 1.51 3.375 3.375z" />
+              </svg>
+              {cart.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-[#d4af37] text-black text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
+                      {cart.reduce((sum, item) => sum + item.qty, 0)}
+                  </span>
+              )}
+          </div>
+        </div>
       </header>
 
       {/* CATEGORY MENU */}
@@ -106,13 +236,13 @@ export default function HomePage() {
           <button
             key={cat.id}
             onClick={() => setSelectedCategory(cat.name.toLowerCase())}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap transition ${selectedCategory === cat.id
-              ? "bg-[#d4af37] text-black font-semibold" // gold theme
-              : "bg-[#222]"
+            className={`px-3 py-3 text-sm flex items-center gap-2 whitespace-nowrap transition-colors duration-200 border-b-2 ${selectedCategory === cat.name.toLowerCase()
+                ? "border-[#d4af37] text-[#d4af37]"
+                : "border-transparent text-gray-400 hover:text-white"
               }`}
           >
             <span className="text-lg">
-              {categoryIcons[cat.id] || "📦"}
+              {categoryIcons[cat.name.toLowerCase()] || "📦"}
             </span>
             {cat.name}
           </button>
@@ -135,46 +265,32 @@ export default function HomePage() {
         {/* PRODUCT LIST */}
         <section className="md:col-span-2">
           <h2 className="font-semibold mb-3 text-xl text-[#d4af37]">
-            {categories.find((c) => c.id === selectedCategory)?.name}
+            {categories.find((c) => c.name.toLowerCase() === selectedCategory)?.name}
           </h2>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {filteredProducts.map((p) => (
-              <div
-                key={p.id}
-                className="bg-[#1c1c1c] rounded-xl p-3 shadow-lg hover:scale-105 transition cursor-pointer border border-[#333]"
-              >
-                <img
-                  src={p.imageUrl}
-                  alt={p.name}
-                  className="w-full h-28 object-cover rounded bg-[#333]"
-                />
-
-                <h3 className="font-semibold mt-2">{p.name}</h3>
-                <p className="text-sm text-gray-400 capitalize">
-                  {p.category}
-                </p>
-                <p className="font-bold mt-1 text-[#d4af37]">
-                  ₹{p.price}
-                </p>
-
-                <button
-                  className="mt-2 w-full border border-[#d4af37] text-[#d4af37] px-3 py-1 rounded hover:bg-[#d4af37] hover:text-black transition"
-                  onClick={() => addToCart(p)}
-                >
-                  Add to Cart
-                </button>
-              </div>
-            ))}
-
-            {filteredProducts.length === 0 && (
-              <p className="text-sm text-gray-400">No products found</p>
+            {isPageLoading ? (
+                Array.from({ length: 6 }).map((_, i) => <ProductSkeleton key={i} />)
+            ) : filteredProducts.length > 0 ? (
+                filteredProducts.map((p) => {
+                    const itemInCart = cart.find(item => item.id === p.id);
+                    return (
+                        <ProductCard
+                            key={p.id}
+                            product={p}
+                            updateCartQty={updateQty}
+                            itemInCart={itemInCart}
+                        />
+                    )
+                })
+            ) : (
+                <p className="text-sm text-gray-400">No products found</p>
             )}
           </div>
         </section>
 
         {/* CART */}
-        <section className="bg-[#1c1c1c] p-4 rounded-xl shadow border border-[#333]">
+        <section ref={cartRef} className="bg-[#1c1c1c] p-4 rounded-xl shadow border border-[#333]">
           <h2 className="font-semibold mb-2 text-lg text-[#d4af37]">
             Cart
           </h2>
@@ -224,7 +340,7 @@ export default function HomePage() {
             />
 
             <input
-              placeholder="Phone Number"
+              placeholder="Phone Number (Optional)"
               className="w-full px-3 py-2 bg-[#111] border border-[#444] rounded text-white"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -242,9 +358,10 @@ export default function HomePage() {
 
           <button
             onClick={placeOrder}
-            className="mt-3 w-full bg-[#d4af37] text-black py-2 rounded font-semibold hover:opacity-90"
+            className="mt-3 w-full bg-[#d4af37] text-black py-2 rounded font-semibold hover:opacity-90 disabled:opacity-50"
+            disabled={cart.length === 0 || isPlacingOrder}
           >
-            Place Order
+            {isPlacingOrder ? "Placing Order..." : "Place Order"}
           </button>
 
         </section>
